@@ -192,7 +192,6 @@ __global__ void otsu_mean(uint32_t *histogram, uint32_t *threshold_sums, uint64_
     }
 
     threshold_sum_above = block_sum<false>(threshold_sum_above, bin_idx, n_bins, (uint32_t *) shared_memory_u64);
-    __syncthreads();
     sum_above = block_sum<false>(sum_above, bin_idx, n_bins, (uint64_t *) shared_memory_u64);
 
     if(bin_idx == 0) {
@@ -207,7 +206,6 @@ __global__ void otsu_variance(longlong2 *variance, uint32_t *threshold_sums, uin
     uint32_t bin_idx = blockIdx.x * blockDim.x + threadIdx.x;
     uint32_t threshold = blockIdx.y * blockDim.y + threadIdx.y;
 
-    // TODO: Could these global reads be avoided?
     int64_t n_samples = (int64_t) threshold_sums[0];
     uint32_t n_samples_above = threshold_sums[threshold];
     uint32_t n_samples_below = n_samples - n_samples_above;
@@ -229,7 +227,6 @@ __global__ void otsu_variance(longlong2 *variance, uint32_t *threshold_sums, uin
     }
 
     threshold_variance_above = block_sum<false>(threshold_variance_above, bin_idx, n_bins, shared_memory_i64);
-    __syncthreads();
     threshold_variance_below = block_sum<false>(threshold_variance_below, bin_idx, n_bins, shared_memory_i64);
 
     if(bin_idx == 0) {
@@ -265,7 +262,6 @@ otsu_score(uint32_t *otsu_threshold, uint32_t *threshold_sums, longlong2 *varian
     // We found the minimum score, but we need to find the threshold. If we find the thread with the minimum score, we
     // know which threshold it is
     if(original_score == score) {
-        // printf("kernel score: %f %u\n", score, threshold - 1);
         *otsu_threshold = threshold - 1;
     }
 }
