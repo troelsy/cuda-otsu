@@ -200,37 +200,41 @@ __global__ void otsu_mean(uint32_t *histogram, uint32_t *threshold_sums, uint64_
     }
 }
 
-__global__ void otsu_variance(longlong2 *variance, uint32_t *threshold_sums, uint64_t *sums, uint32_t n_bins) {
+__global__ void
+otsu_variance(longlong2 *variance, uint32_t *histogram, uint32_t *threshold_sums, uint64_t *sums, uint32_t n_bins) {
     extern __shared__ int64_t shared_memory_i64[];
 
     uint32_t bin_idx = blockIdx.x * blockDim.x + threadIdx.x;
     uint32_t threshold = blockIdx.y * blockDim.y + threadIdx.y;
 
-    int64_t n_samples = (int64_t) threshold_sums[0];
+    uint32_t n_samples = threshold_sums[0];
     uint32_t n_samples_above = threshold_sums[threshold];
     uint32_t n_samples_below = n_samples - n_samples_above;
 
-    int64_t total_sum = (int64_t) sums[0];
-    int64_t sum_above = (int64_t) sums[threshold];
-    int64_t sum_below = total_sum - sum_above;
+    uint64_t total_sum = sums[0];
+    uint64_t sum_above = sums[threshold];
+    uint64_t sum_below = total_sum - sum_above;
 
-    int64_t threshold_variance_above = 0;
-    int64_t threshold_variance_below = 0;
+    int32_t threshold_variance_above = 0;
+    int32_t threshold_variance_below = 0;
     if(bin_idx >= threshold) {
-        int64_t mean = sum_above / n_samples_above;
-        int64_t sigma = bin_idx - mean;
+        uint32_t mean = sum_above / n_samples_above;
+        int32_t sigma = bin_idx - mean;
         threshold_variance_above = sigma * sigma;
     } else {
-        int64_t mean = sum_below / n_samples_below;
-        int64_t sigma = bin_idx - mean;
+        uint32_t mean = sum_below / n_samples_below;
+        int32_t sigma = bin_idx - mean;
         threshold_variance_below = sigma * sigma;
     }
 
-    threshold_variance_above = block_sum<false>(threshold_variance_above, bin_idx, n_bins, shared_memory_i64);
-    threshold_variance_below = block_sum<false>(threshold_variance_below, bin_idx, n_bins, shared_memory_i64);
+    uint32_t bin_count = histogram[bin_idx];
+    int64_t threshold_variance_above64 = threshold_variance_above * bin_count;
+    int64_t threshold_variance_below64 = threshold_variance_below * bin_count;
+    threshold_variance_above64 = block_sum<false>(threshold_variance_above64, bin_idx, n_bins, shared_memory_i64);
+    threshold_variance_below64 = block_sum<false>(threshold_variance_below64, bin_idx, n_bins, shared_memory_i64);
 
     if(bin_idx == 0) {
-        variance[threshold] = make_longlong2(threshold_variance_above, threshold_variance_below);
+        variance[threshold] = make_longlong2(threshold_variance_above64, threshold_variance_below64);
     }
 }
 
@@ -276,7 +280,7 @@ void otsu_async(
 
     shared_memory = n_bins / WARP_SIZE * sizeof(uint64_t);
     otsu_mean<<<grid_all, block_all, shared_memory, stream>>>(histogram, threshold_sums, sums, n_bins);
-    otsu_variance<<<grid_all, block_all, shared_memory, stream>>>(variance, threshold_sums, sums, n_bins);
+    otsu_variance<<<grid_all, block_all, shared_memory, stream>>>(variance, histogram, threshold_sums, sums, n_bins);
 
     shared_memory = n_bins / WARP_SIZE * sizeof(float);
     otsu_score<<<grid_score, block_score, shared_memory, stream>>>(
